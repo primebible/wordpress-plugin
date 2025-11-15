@@ -7,11 +7,4 @@ if (!defined('WP_UNINSTALL_PLUGIN')) {
 delete_option('primebible_settings');
 
 // Clean per-post meta
-global $wpdb;
-$meta_key = '_primebible_disable';
-$wpdb->query(
-  $wpdb->prepare(
-    "DELETE FROM {$wpdb->postmeta} WHERE meta_key = %s",
-    $meta_key
-  )
-);
+delete_post_meta_by_key( '_primebible_disable' );
