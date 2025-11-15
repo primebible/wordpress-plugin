@@ -100,15 +100,24 @@ See [full documentation](https://primebible.com/docs/wordpress-plugin) for all o
 ### File Structure
 
 ```
-primebible-verse-preview/
-├── primebible-verse-preview.php   # Main plugin file
-├── readme.txt                      # WordPress.org readme
-├── README.md                       # This file
-├── LICENSE                         # GPL-2.0+
+wordpress-plugin/
+├── .github/
+│   └── FUNDING.yml              # GitHub Sponsors configuration
 ├── assets/
-│   └── js/
-│       └── primebible-embed.js    # Frontend script
-└── languages/                      # Translations
+│   ├── assets/
+│   │   ├── primebible-embed.js     # Source JavaScript
+│   │   └── primebible-embed.min.js # Minified production JS
+│   ├── css/
+│   │   └── admin.css               # Admin panel styles
+│   ├── package.json                # Build configuration (terser)
+│   └── .gitkeep                    # Folder placeholder
+├── .gitattributes              # GitHub Linguist configuration
+├── CHANGELOG.md                # Version history
+├── CONTRIBUTING.md             # Contribution guidelines
+├── LICENSE                     # GPL-2.0+ license
+├── README.md                   # This file
+├── primebible-verse-preview.php # Main plugin file (861 lines)
+└── uninstall.php               # Cleanup on uninstall
 ```
 
 ### Local Development
