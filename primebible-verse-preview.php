@@ -1,7 +1,7 @@
 <?php
 /**
  * Plugin Name: PrimeBible Verse Preview
- * Plugin URI: https://primebible.com
+ * Plugin URI: https://github.com/primebible/wordpress-plugin
  * Description: Auto-detects Bible references in your content and shows a beautiful, mobile-friendly tooltip preview powered by PrimeBible. Includes admin settings, caching controls, per-post disable, and counts-aware expansion.
  * Version: 2.5.1
  * Author: PrimeBible
