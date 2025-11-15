@@ -1,0 +1,46 @@
+# WordPress Plugin Language Detection for GitHub Linguist
+# Ensures proper language statistics display on repository
+
+# Primary plugin code
+*.php linguist-language=PHP
+*.js linguist-language=JavaScript
+
+# Documentation files (don't count toward language stats)
+*.md linguist-documentation
+CHANGELOG.md linguist-documentation
+CONTRIBUTING.md linguist-documentation
+LICENSE linguist-documentation
+readme.txt linguist-documentation
+
+# WordPress-specific files
+readme.txt linguist-vendored
+
+# Assets and build artifacts
+assets/* linguist-vendored
+node_modules/* linguist-vendored
+vendor/* linguist-vendored
+
+# Text file normalization
+* text=auto
+*.php text eol=lf
+*.js text eol=lf
+*.css text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.txt text eol=lf
+*.yml text eol=lf
+
+# Binary files
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.mov binary
+*.mp4 binary
+*.mp3 binary
+*.zip binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.eot binary
