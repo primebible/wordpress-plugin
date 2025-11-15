@@ -1,0 +1,10 @@
+{
+  "name": "primebible-verse-preview",
+  "private": true,
+  "devDependencies": {
+    "terser": "^5.36.0"
+  },
+  "scripts": {
+    "build": "npx terser assets/js/primebible-embed.js --compress --mangle --keep-fnames --keep-classnames --comments \"/^!/\" --output assets/js/primebible-embed.min.js"
+  }
+}
