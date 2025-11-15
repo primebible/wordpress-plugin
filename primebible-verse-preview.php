@@ -391,12 +391,18 @@ if (!class_exists('PrimeBible_Verse_Preview')) {
     }
 
     public function save_metabox($post_id) {
-      if (!isset($_POST['primebible_metabox_nonce_field']) || !wp_verify_nonce($_POST['primebible_metabox_nonce_field'], 'primebible_metabox_nonce')) {
+      if (!isset($_POST['primebible_metabox_nonce_field'])) {
+        return;
+      }
+
+      $primebible_nonce = sanitize_text_field(wp_unslash($_POST['primebible_metabox_nonce_field']));
+      if (!wp_verify_nonce($primebible_nonce, 'primebible_metabox_nonce')) {
         return;
       }
       if (defined('DOING_AUTOSAVE') && DOING_AUTOSAVE) {
         return;
       }
+
       if (!current_user_can('edit_post', $post_id)) {
         return;
       }
