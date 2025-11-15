@@ -10,6 +10,12 @@ Beautiful, mobile-friendly Bible verse tooltips for WordPress. Auto-detects refe
 
 ---
 
+## 🎬 See It In Action
+
+![PrimeBible Verse Preview Demo](https://primebible.com/embed-demo.gif)
+
+*Hover over any Bible reference to see instant verse previews*
+
 ## ✨ Features
 
 - 🔍 **Auto-detection** of Bible references (e.g., "John 3:16", "Romans 8:1-4")
