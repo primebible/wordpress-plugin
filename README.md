@@ -6,7 +6,7 @@
 
 Beautiful, mobile-friendly Bible verse tooltips for WordPress. Auto-detects references and shows instant previews.
 
-[Download from WordPress.org]([https://wordpress.org/plugins/primebible/#installation](https://wordpress.org/plugins/primebible/#installation)) | [Documentation]([https://primebible.com/docs/wordpress-plugin](https://wordpress.org/plugins/primebible/#installation)) | [Report Bug](https://github.com/primebible/wordpress-plugin/issues) | [Request Feature](https://github.com/primebible/wordpress-plugin/issues)
+[Download from WordPress.org](https://wordpress.org/plugins/primebible/#installation)) | [Documentation]([https://primebible.com/docs/wordpress-plugin](https://wordpress.org/plugins/primebible/#installation)) | [Report Bug](https://github.com/primebible/wordpress-plugin/issues) | [Request Feature](https://github.com/primebible/wordpress-plugin/issues)
 
 ---
 
