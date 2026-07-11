@@ -1,6 +1,6 @@
 /*!
- * PrimeBible Verse Preview - Premium Edition
- * Version 2.5.2 - Fixed chapter URLs to use proper format (/translation/book/chapter); counts-free expansion; unit tests
+ * PrimeBible Verse Preview
+ * Version 2.5.3 - Reference detection no longer matches everyday words ("is 5", "am 24", "so 3"); time/ordinal/year guards
  * Attach to any page. Configure with window.PrimeBibleConfig before this script.
  */
 (function () {
@@ -49,7 +49,7 @@
     // Lazy scanning
     lazyScan: true,
 
-    // Optional: verse counts for perfect expansion (otherwise we use a counts-free fallback)
+    // Optional override. Bundled verse counts are assigned below when this is empty.
     chapterVerseCounts: null,
 
     // Debug
@@ -84,6 +84,15 @@
     return () => Date.now();
   })();
 
+  // Module-level listeners that destroy() must remove, or repeated
+  // destroy/init cycles (hot reloads, SPA navigation) leak a few window
+  // listeners per cycle.
+  const globalCleanup = [];
+  function addManagedListener(target, type, fn, opts) {
+    target.addEventListener(type, fn, opts);
+    globalCleanup.push(() => { try { target.removeEventListener(type, fn, opts); } catch {} });
+  }
+
   // Cached mobile detection
   const isMobile = (() => {
     let cached = null;
@@ -96,8 +105,8 @@
       return (coarse && noHover) || uaMobile || narrow;
     };
     const invalidate = () => { cached = null; };
-    window.addEventListener("resize", invalidate, { passive: true });
-    window.addEventListener("orientationchange", invalidate);
+    addManagedListener(window, "resize", invalidate, { passive: true });
+    addManagedListener(window, "orientationchange", invalidate);
     return () => {
       if (cached == null) cached = compute();
       return cached;
@@ -106,104 +115,228 @@
 
   const hasTouch = () => "ontouchstart" in window || navigator.maxTouchPoints > 0;
 
+  const DEFAULT_CHAPTER_VERSE_COUNT_LISTS = {
+    "Genesis": [31,25,24,26,32,22,24,22,29,32,32,20,18,24,21,16,27,33,38,18,34,24,20,67,34,35,46,22,35,43,55,32,20,31,29,43,36,30,23,23,57,38,34,34,28,34,31,22,33,26],
+    "Exodus": [22,25,22,31,23,30,25,32,35,29,10,51,22,31,27,36,16,27,25,26,36,31,33,18,40,37,21,43,46,38,18,35,23,35,35,38,29,31,43,38],
+    "Leviticus": [17,16,17,35,19,30,38,36,24,20,47,8,59,57,33,34,16,30,37,27,24,33,44,23,55,46,34],
+    "Numbers": [54,34,51,49,31,27,89,26,23,36,35,16,33,45,41,50,13,32,22,29,35,41,30,25,18,65,23,31,40,16,54,42,56,29,34,13],
+    "Deuteronomy": [46,37,29,49,33,25,26,20,29,22,32,32,18,29,23,22,20,22,21,20,23,30,25,22,19,19,26,68,29,20,30,52,29,12],
+    "Joshua": [18,24,17,24,15,27,26,35,27,43,23,24,33,15,63,10,18,28,51,9,45,34,16,33],
+    "Judges": [36,23,31,24,31,40,25,35,57,18,40,15,25,20,20,31,13,31,30,48,25],
+    "Ruth": [22,23,18,22],
+    "1 Samuel": [28,36,21,22,12,21,17,22,27,27,15,25,23,52,35,23,58,30,24,42,15,23,29,22,44,25,12,25,11,31,13],
+    "2 Samuel": [27,32,39,12,25,23,29,18,13,19,27,31,39,33,37,23,29,33,43,26,22,51,39,25],
+    "1 Kings": [53,46,28,34,18,38,51,66,28,29,43,33,34,31,34,34,24,46,21,43,29,53],
+    "2 Kings": [18,25,27,44,27,33,20,29,37,36,21,21,25,29,38,20,41,37,37,21,26,20,37,20,30],
+    "1 Chronicles": [54,55,24,43,26,81,40,40,44,14,47,40,14,17,29,43,27,17,19,8,30,19,32,31,31,32,34,21,30],
+    "2 Chronicles": [17,18,17,22,14,42,22,18,31,19,23,16,22,15,19,14,19,34,11,37,20,12,21,27,28,23,9,27,36,27,21,33,25,33,27,23],
+    "Ezra": [11,70,13,24,17,22,28,36,15,44],
+    "Nehemiah": [11,20,32,23,19,19,73,18,38,39,36,47,31],
+    "Esther": [22,23,15,17,14,14,10,17,32,3],
+    "Job": [22,13,26,21,27,30,21,22,35,22,20,25,28,22,35,22,16,21,29,29,34,30,17,25,6,14,23,28,25,31,40,22,33,37,16,33,24,41,30,24,34,17],
+    "Psalms": [6,12,8,8,12,10,17,9,20,18,7,8,6,7,5,11,15,50,14,9,13,31,6,10,22,12,14,9,11,12,24,11,22,22,28,12,40,22,13,17,13,11,5,26,17,11,9,14,20,23,19,9,6,7,23,13,11,11,17,12,8,12,11,10,13,20,7,35,36,5,24,20,28,23,10,12,20,72,13,19,16,8,18,12,13,17,7,18,52,17,16,15,5,23,11,13,12,9,9,5,8,28,22,35,45,48,43,13,31,7,10,10,9,8,18,19,2,29,176,7,8,9,4,8,5,6,5,6,8,8,3,18,3,3,21,26,9,8,24,13,10,7,12,15,21,10,20,14,9,6],
+    "Proverbs": [33,22,35,27,23,35,27,36,18,32,31,28,25,35,33,33,28,24,29,30,31,29,35,34,28,28,27,28,27,33,31],
+    "Ecclesiastes": [18,26,22,16,20,12,29,17,18,20,10,14],
+    "Song of Solomon": [17,17,11,16,16,13,13,14],
+    "Isaiah": [31,22,26,6,30,13,25,22,21,34,16,6,22,32,9,14,14,7,25,6,17,25,18,23,12,21,13,29,24,33,9,20,24,17,10,22,38,22,8,31,29,25,28,28,25,13,15,22,26,11,23,15,12,17,13,12,21,14,21,22,11,12,19,12,25,24],
+    "Jeremiah": [19,37,25,31,31,30,34,22,26,25,23,17,27,22,21,21,27,23,15,18,14,30,40,10,38,24,22,17,32,24,40,44,26,22,19,32,21,28,18,16,18,22,13,30,5,28,7,47,39,46,64,34],
+    "Lamentations": [22,22,66,22,22],
+    "Ezekiel": [28,10,27,17,17,14,27,18,11,22,25,28,23,23,8,63,24,32,14,49,32,31,49,27,17,21,36,26,21,26,18,32,33,31,15,38,28,23,29,49,26,20,27,31,25,24,23,35],
+    "Daniel": [21,49,30,37,31,28,28,27,27,21,45,13],
+    "Hosea": [11,23,5,19,15,11,16,14,17,15,12,14,16,9],
+    "Joel": [20,32,21],
+    "Amos": [15,16,15,13,27,14,17,14,15],
+    "Obadiah": [21],
+    "Jonah": [17,10,10,11],
+    "Micah": [16,13,12,13,15,16,20],
+    "Nahum": [15,13,19],
+    "Habakkuk": [17,20,19],
+    "Zephaniah": [18,15,20],
+    "Haggai": [15,23],
+    "Zechariah": [21,13,10,14,11,15,14,23,17,12,17,14,9,21],
+    "Malachi": [14,17,18,6],
+    "Matthew": [25,23,17,25,48,34,29,34,38,42,30,50,58,36,39,28,27,35,30,34,46,46,39,51,46,75,66,20],
+    "Mark": [45,28,35,41,43,56,37,38,50,52,33,44,37,72,47,20],
+    "Luke": [80,52,38,44,39,49,50,56,62,42,54,59,35,35,32,31,37,43,48,47,38,71,56,53],
+    "John": [51,25,36,54,47,71,53,59,41,42,57,50,38,31,27,33,26,40,42,31,25],
+    "Acts": [26,47,26,37,42,15,60,40,43,48,30,25,52,28,41,40,34,28,41,38,40,30,35,27,27,32,44,31],
+    "Romans": [32,29,31,25,21,23,25,39,33,21,36,21,14,23,33,27],
+    "1 Corinthians": [31,16,23,21,13,20,40,13,27,33,34,31,13,40,58,24],
+    "2 Corinthians": [24,17,18,18,21,18,16,24,15,18,33,21,14],
+    "Galatians": [24,21,29,31,26,18],
+    "Ephesians": [23,22,21,32,33,24],
+    "Philippians": [30,30,21,23],
+    "Colossians": [29,23,25,18],
+    "1 Thessalonians": [10,20,13,18,28],
+    "2 Thessalonians": [12,17,18],
+    "1 Timothy": [20,15,16,16,25,21],
+    "2 Timothy": [18,26,17,22],
+    "Titus": [16,15,15],
+    "Philemon": [25],
+    "Hebrews": [14,18,19,16,14,20,28,13,28,39,40,29,25],
+    "James": [27,26,18,17,20],
+    "1 Peter": [25,25,22,19,14],
+    "2 Peter": [21,22,18],
+    "1 John": [10,29,24,21,21],
+    "2 John": [13],
+    "3 John": [14],
+    "Jude": [25],
+    "Revelation": [20,29,22,11,14,17,17,13,21,11,19,17,18,20,8,21,18,24,21,15,27,21]
+  };
+
+  function buildDefaultChapterVerseCounts() {
+    const counts = {};
+    Object.keys(DEFAULT_CHAPTER_VERSE_COUNT_LISTS).forEach(book => {
+      counts[book] = {};
+      DEFAULT_CHAPTER_VERSE_COUNT_LISTS[book].forEach((count, index) => {
+        counts[book][String(index + 1)] = count;
+      });
+    });
+    return counts;
+  }
+
+  const DEFAULT_CHAPTER_VERSE_COUNTS = buildDefaultChapterVerseCounts();
+  if (!config.chapterVerseCounts) config.chapterVerseCounts = DEFAULT_CHAPTER_VERSE_COUNTS;
+
+  function isMobileMode() {
+    return config.mobileOptimized !== false && isMobile();
+  }
+
   // ------------------------------------------------------------
   // 1. Books and regex (supports dotted abbreviations)
   // ------------------------------------------------------------
-const bibleBooks = [
-  "Genesis","Gen","Ge","Gn",
-  "Exodus","Ex","Exo","Exod",
-  "Leviticus","Lev","Le","Lv",
-  "Numbers","Num","Nu","Nm","Nb",
-  "Deuteronomy","Deut","Dt","De",
-  "Joshua","Josh","Jos","Jsh",
-  "Judges","Judg","Jdg","Jg","Jdgs",
-  "Ruth","Rth","Ru",
-  // Samuel
-  "1 Samuel","1st Samuel","1 Sam","1st Sam","1 Sa","1st Sa","1 S","1st S","I Samuel","I Sam","I Sa","I S",
-  "2 Samuel","2nd Samuel","2 Sam","2nd Sam","2 Sa","2nd Sa","2 S","2nd S","II Samuel","II Sam","II Sa","II S",
-  // Kings
-  "1 Kings","1st Kings","1 Kgs","1st Kgs","1 Ki","1st Ki","I Kings","I Kgs","I Ki",
-  "2 Kings","2nd Kings","2 Kgs","2nd Kgs","2 Ki","2nd Ki","II Kings","II Kgs","II Ki",
-  // Chronicles
-  "1 Chronicles","1st Chronicles","1 Chron","1st Chron","1 Ch","1st Ch","I Chronicles","I Chron","I Ch",
-  "2 Chronicles","2nd Chronicles","2 Chron","2nd Chron","2 Ch","2nd Ch","II Chronicles","II Chron","II Ch",
-  "Ezra","Ezr","Ez",
-  "Nehemiah","Neh","Ne",
-  "Esther","Est","Es",
-  "Job","Jb",
-  "Psalms","Psalm","Ps","Psa","Psm","Pss",
-  "Proverbs","Prov","Pro","Pr","Prv",
-  "Ecclesiastes","Eccles","Ecc","Ec","Qoh",
-  "Song of Solomon","Song of Songs","Song","SOS","So","Canticles","Cant","Canticle of Canticles",
-  "Isaiah","Isa", //avoid "is" to avoid false positives
-  "Jeremiah","Jer","Je","Jr",
-  "Lamentations","Lam","La",
-  "Ezekiel","Ezek","Eze","Ezk",
-  "Daniel","Dan","Da","Dn",
-  "Hosea","Hos","Ho",
-  "Joel","Joe","Jl",
-  "Amos","Am",
-  "Obadiah","Obad","Ob",
-  "Jonah","Jon","Jnh",
-  "Micah","Mic","Mc",
-  "Nahum","Nah","Na",
-  "Habakkuk","Hab","Hb",
-  "Zephaniah","Zeph","Zep","Zp",
-  "Haggai","Hag","Hg",
-  "Zechariah","Zech","Zec","Zc",
-  "Malachi","Mal","Ml",
-  "Matthew","Matt","Mt","Mat",
-  "Mark","Mrk","Mk","Mr","Mar",
-  "Luke","Luk","Lk",
-  "John","Joh","Jn","Jhn",
-  "Acts","Act","Ac",
-  "Romans","Rom","Ro","Rm",
-  // Corinthians
-  "1 Corinthians","1st Corinthians","1 Corin","1st Corin","1 Cor","1st Cor","1 Co","1st Co","I Corinthians","I Cor","I Co",
-  "2 Corinthians","2nd Corinthians","2 Corin","2nd Corin","2 Cor","2nd Cor","2 Co","2nd Co","II Corinthians","II Cor","II Co",
-  "Galatians","Gal","Ga","Gl",
-  "Ephesians","Eph",
-  "Philippians","Phil","Php",
-  "Colossians","Col","Co",
-  // Thessalonians
-  "1 Thessalonians","1st Thessalonians","1 Thess","1st Thess","1 Thes","1st Thes","1 Th","1st Th","I Thessalonians","I Thess","I Thes","I Th",
-  "2 Thessalonians","2nd Thessalonians","2 Thess","2nd Thess","2 Thes","2nd Thes","2 Th","2nd Th","II Thessalonians","II Thess","II Thes","II Th",
-  // Timothy
-  "1 Timothy","1st Timothy","1 Tim","1st Tim","1 Ti","1st Ti","I Timothy","I Tim","I Ti",
-  "2 Timothy","2nd Timothy","2 Tim","2nd Tim","2 Ti","2nd Ti","II Timothy","II Tim","II Ti",
-  "Titus","Tit","Ti",
-  "Philemon","Philem","Phm",
-  "Hebrews","Heb",
-  "James","Jam","Jas",
-  // Peter
-  "1 Peter","1st Peter","1 Pet","1st Pet","1 Pe","1st Pe","1 Pt","1st Pt","I Peter","I Pet","I Pe","I Pt",
-  "2 Peter","2nd Peter","2 Pet","2nd Pet","2 Pe","2nd Pe","2 Pt","2nd Pt","II Peter","II Pet","II Pe","II Pt",
-  // John (Epistles)
-  "1 John","1st John","1 Jn","1st Jn","1 Jo","1st Jo","1 Jhn","1st Jhn","I John","I Jn","I Jo","I Jhn",
-  "2 John","2nd John","2 Jn","2nd Jn","2 Jo","2nd Jo","2 Jhn","2nd Jhn","II John","II Jn","II Jo","II Jhn",
-  "3 John","3rd John","3 Jn","3rd Jn","3 Jo","3rd Jo","3 Jhn","3rd Jhn","III John","III Jn","III Jo","III Jhn",
-  "Jude","Jud","Ju","Jd",
-  "Revelation","Rev","Re","Reve"
+const bibleBookAliases = [
+  { canonical: "Genesis", aliases: ["Gen","Ge","Gn"] },
+  { canonical: "Exodus", aliases: ["Ex","Exo","Exod"] },
+  { canonical: "Leviticus", aliases: ["Lev","Le","Lv"] },
+  { canonical: "Numbers", aliases: ["Num","Nu","Nm","Nb"] },
+  { canonical: "Deuteronomy", aliases: ["Deut","Dt","De"] },
+  { canonical: "Joshua", aliases: ["Josh","Jos","Jsh"] },
+  { canonical: "Judges", aliases: ["Judg","Jdg","Jg","Jdgs"] },
+  { canonical: "Ruth", aliases: ["Rth","Ru"] },
+  { canonical: "1 Samuel", aliases: ["1st Samuel","1 Sam","1st Sam","1 Sa","1st Sa","1 S","1st S","I Samuel","I Sam","I Sa"] }, // "I S" removed: collapses to the word "is"
+  { canonical: "2 Samuel", aliases: ["2nd Samuel","2 Sam","2nd Sam","2 Sa","2nd Sa","2 S","2nd S","II Samuel","II Sam","II Sa","II S"] },
+  { canonical: "1 Kings", aliases: ["1st Kings","1 Kgs","1st Kgs","1 Ki","1st Ki","I Kings","I Kgs","I Ki"] },
+  { canonical: "2 Kings", aliases: ["2nd Kings","2 Kgs","2nd Kgs","2 Ki","2nd Ki","II Kings","II Kgs","II Ki"] },
+  { canonical: "1 Chronicles", aliases: ["1st Chronicles","1 Chron","1st Chron","1 Ch","1st Ch","I Chronicles","I Chron","I Ch"] },
+  { canonical: "2 Chronicles", aliases: ["2nd Chronicles","2 Chron","2nd Chron","2 Ch","2nd Ch","II Chronicles","II Chron","II Ch"] },
+  { canonical: "Ezra", aliases: ["Ezr","Ez"] },
+  { canonical: "Nehemiah", aliases: ["Neh","Ne"] },
+  { canonical: "Esther", aliases: ["Est","Es"] },
+  { canonical: "Job", aliases: ["Jb"] },
+  { canonical: "Psalms", aliases: ["Psalm","Ps","Psa","Psm","Pss"] },
+  { canonical: "Proverbs", aliases: ["Prov","Pro","Pr","Prv"] },
+  { canonical: "Ecclesiastes", aliases: ["Eccles","Ecc","Ec","Qoh"] },
+  { canonical: "Song of Solomon", aliases: ["Song of Songs","Song","SOS","So","Canticles","Cant","Canticle of Canticles"] },
+  { canonical: "Isaiah", aliases: ["Isa"] }, // Avoid "is" to reduce false positives.
+  { canonical: "Jeremiah", aliases: ["Jer","Je","Jr"] },
+  { canonical: "Lamentations", aliases: ["Lam","La"] },
+  { canonical: "Ezekiel", aliases: ["Ezek","Eze","Ezk"] },
+  { canonical: "Daniel", aliases: ["Dan","Da","Dn"] },
+  { canonical: "Hosea", aliases: ["Hos","Ho"] },
+  { canonical: "Joel", aliases: ["Joe","Jl"] },
+  { canonical: "Amos", aliases: ["Am"] },
+  { canonical: "Obadiah", aliases: ["Obad","Ob"] },
+  { canonical: "Jonah", aliases: ["Jon","Jnh"] },
+  { canonical: "Micah", aliases: ["Mic","Mc"] },
+  { canonical: "Nahum", aliases: ["Nah","Na"] },
+  { canonical: "Habakkuk", aliases: ["Hab","Hb"] },
+  { canonical: "Zephaniah", aliases: ["Zeph","Zep","Zp"] },
+  { canonical: "Haggai", aliases: ["Hag","Hg"] },
+  { canonical: "Zechariah", aliases: ["Zech","Zec","Zc"] },
+  { canonical: "Malachi", aliases: ["Mal","Ml"] },
+  { canonical: "Matthew", aliases: ["Matt","Mt","Mat"] },
+  { canonical: "Mark", aliases: ["Mrk","Mk","Mr","Mar"] },
+  { canonical: "Luke", aliases: ["Luk","Lk","Lu"] },
+  { canonical: "John", aliases: ["Joh","Jn","Jhn"] },
+  { canonical: "Acts", aliases: ["Act","Ac"] },
+  { canonical: "Romans", aliases: ["Rom","Ro","Rm"] },
+  { canonical: "1 Corinthians", aliases: ["1st Corinthians","1 Corin","1st Corin","1 Cor","1st Cor","1 Co","1st Co","I Corinthians","I Cor","I Co"] },
+  { canonical: "2 Corinthians", aliases: ["2nd Corinthians","2 Corin","2nd Corin","2 Cor","2nd Cor","2 Co","2nd Co","II Corinthians","II Cor","II Co"] },
+  { canonical: "Galatians", aliases: ["Gal","Ga","Gl"] },
+  { canonical: "Ephesians", aliases: ["Eph"] },
+  { canonical: "Philippians", aliases: ["Phil","Php"] },
+  { canonical: "Colossians", aliases: ["Col","Co"] },
+  { canonical: "1 Thessalonians", aliases: ["1st Thessalonians","1 Thess","1st Thess","1 Thes","1st Thes","1 Th","1st Th","I Thessalonians","I Thess","I Thes","I Th"] },
+  { canonical: "2 Thessalonians", aliases: ["2nd Thessalonians","2 Thess","2nd Thess","2 Thes","2nd Thes","2 Th","2nd Th","II Thessalonians","II Thess","II Thes","II Th"] },
+  { canonical: "1 Timothy", aliases: ["1st Timothy","1 Tim","1st Tim","1 Ti","1st Ti","I Timothy","I Tim","I Ti"] },
+  { canonical: "2 Timothy", aliases: ["2nd Timothy","2 Tim","2nd Tim","2 Ti","2nd Ti","II Timothy","II Tim","II Ti"] },
+  { canonical: "Titus", aliases: ["Tit","Ti"] },
+  { canonical: "Philemon", aliases: ["Philem","Phm"] },
+  { canonical: "Hebrews", aliases: ["Heb"] },
+  { canonical: "James", aliases: ["Jam","Jas"] },
+  { canonical: "1 Peter", aliases: ["1st Peter","1 Pet","1st Pet","1 Pe","1st Pe","1 Pt","1st Pt","I Peter","I Pet","I Pe","I Pt"] },
+  { canonical: "2 Peter", aliases: ["2nd Peter","2 Pet","2nd Pet","2 Pe","2nd Pe","2 Pt","2nd Pt","II Peter","II Pet","II Pe","II Pt"] },
+  { canonical: "1 John", aliases: ["1st John","1 Jn","1st Jn","1 Jo","1st Jo","1 Jhn","1st Jhn","I John","I Jn","I Jo","I Jhn"] },
+  { canonical: "2 John", aliases: ["2nd John","2 Jn","2nd Jn","2 Jo","2nd Jo","2 Jhn","2nd Jhn","II John","II Jn","II Jo","II Jhn"] },
+  { canonical: "3 John", aliases: ["3rd John","3 Jn","3rd Jn","3 Jo","3rd Jo","3 Jhn","3rd Jhn","III John","III Jn","III Jo","III Jhn"] },
+  { canonical: "Jude", aliases: ["Jud","Ju","Jd"] },
+  { canonical: "Revelation", aliases: ["Rev","Re","Reve"] }
 ];
+
+const bibleBooks = bibleBookAliases.reduce((books, group) => {
+  books.push(group.canonical);
+  group.aliases.forEach(alias => books.push(alias));
+  return books;
+}, []);
 
   function escapeForRegex(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
 
+  function bookAliasKey(bookName) {
+    return String(bookName || "").replace(/[.\s]/g, "").toLowerCase();
+  }
+
+  const canonicalBookByAlias = (() => {
+    const aliases = {};
+    bibleBookAliases.forEach(group => {
+      aliases[bookAliasKey(group.canonical)] = group.canonical;
+      group.aliases.forEach(alias => { aliases[bookAliasKey(alias)] = group.canonical; });
+    });
+    return aliases;
+  })();
+
+  function canonicalizeBookName(bookName) {
+    const fallback = String(bookName || "").replace(/\./g, "").replace(/\s+/g, " ").trim();
+    return canonicalBookByAlias[bookAliasKey(bookName)] || fallback;
+  }
+
+  // Aliases whose collapsed form is an everyday word or common token must not
+  // trigger AUTO-DETECTION — once whitespace is made optional, "I S" matches
+  // "is", "Am" matches "am", "So" matches "so", "Act 2" is theater, "GA 4" and
+  // "ES 6" are tech shorthand. They all remain valid for canonicalization and
+  // the [primebible] shortcode; they just never wrap plain prose.
+  const DETECTION_STOPWORDS = new Set([
+    "is", "1s", "iis", "so", "am", "act", "song", "mr", "co", "re", "la",
+    "na", "da", "ho", "ac", "ga", "es", "lu", "ru"
+  ]);
+  const detectableBooks = bibleBooks.filter(name => !DETECTION_STOPWORDS.has(bookAliasKey(name)));
+
   // Allow spaces/dots inside tokens; trailing dot handled on the overall match
-  const bookPattern = bibleBooks
-    .slice()
-    .sort((a, b) => b.length - a.length)
-    .map(name => escapeForRegex(name).replace(/[.\s]/g, "[\\s.]*"))
-    .join("|");
+  function buildBookPattern(names) {
+    return names
+      .slice()
+      .sort((a, b) => b.length - a.length)
+      .map(name => escapeForRegex(name).replace(/[.\s]/g, "[\\s.]*"))
+      .join("|");
+  }
+  // Detection scans arbitrary prose, so it uses the filtered list;
+  // parsing handles refs the user explicitly wrote (shortcode, data-ref),
+  // where short forms like "Ac 2:1" are intentional — it uses every alias.
+  const bookPattern = buildBookPattern(detectableBooks);
+  const parseBookPattern = buildBookPattern(bibleBooks);
 
   const DASH_CLASS = "[\\-\\u2010\\u2011\\u2012\\u2013\\u2014\\u2212]";
-  const H_TAIL = "(?:\\d+:\\d+|\\d+(?!:))";
+  // Chapter/verse numbers are 1-3 digits (years and prices are not references),
+  // and must not be the number of a time ("3pm"), ordinal ("3rd"), or percent.
+  const NUM = "\\d{1,3}(?!\\d)(?!\\s?[ap]\\.?m\\.?\\b)(?!(?:st|nd|rd|th)\\b)(?!%)";
+  const H_TAIL = "(?:" + NUM + ":" + NUM + "|" + NUM + "(?!:))";
 
   // Full reference detector (book may end with a trailing '.')
   const referenceRegex = new RegExp(
     "\\b(" + bookPattern + ")\\.?\\s+" +
-    "\\d+" +
-    "(?::\\d+(?:" + DASH_CLASS + H_TAIL + ")?" + "|" + DASH_CLASS + "\\d+(?!:))?" +
-    "(?:\\s*[;,]\\s*\\d+(?!\\s+(?:" + bookPattern + "))(?::\\d+(?:" + DASH_CLASS + H_TAIL + ")?" + "|" + DASH_CLASS + "\\d+(?!:))?)*" +
+    NUM +
+    "(?::" + NUM + "(?:" + DASH_CLASS + H_TAIL + ")?" + "|" + DASH_CLASS + NUM + "(?!:))?" +
+    "(?:\\s*[;,]\\s*" + NUM + "(?!\\s+(?:" + bookPattern + "))(?::" + NUM + "(?:" + DASH_CLASS + H_TAIL + ")?" + "|" + DASH_CLASS + NUM + "(?!:))?)*" +
     "\\b",
     "gi"
   );
@@ -339,7 +472,12 @@ const bibleBooks = [
       .replace(/\s+/g, " ")
       .trim();
   }
-  function normalizeRef(rawRef) { return normalizeSpacing(normalizeDashes(rawRef)); }
+  function normalizeRef(rawRef) {
+    const normalized = normalizeSpacing(normalizeDashes(rawRef));
+    const match = normalized.match(new RegExp("^\\s*(" + parseBookPattern + ")\\.?\\s+(.*)$", "i"));
+    if (!match) return normalized;
+    return canonicalizeBookName(match[1]) + " " + match[2].trim();
+  }
 
   function pLimit(concurrency) {
     const queue = [];
@@ -469,11 +607,11 @@ const bibleBooks = [
 
   // Split ref into per-segment pieces based on ';'
   function splitRefIntoPieces(ref) {
-    const mainRe = new RegExp("^\\s*(" + bookPattern + ")\\.?\\s+(\\d+)(?::(.*))?\\s*$", "i");
+    const mainRe = new RegExp("^\\s*(" + parseBookPattern + ")\\.?\\s+(\\d+)(?::(.*))?\\s*$", "i");
     const m = ref.match(mainRe);
     if (!m) return [ref];
 
-    const book = m[1].replace(/\./g, "");
+    const book = canonicalizeBookName(m[1]);
     const firstChapter = m[2];
     const versesPart = m[3];
 
@@ -563,13 +701,13 @@ const bibleBooks = [
   }
 
   function expandPiecesWithVerseCounts(pieces) {
-    const crossVerses = new RegExp("^\\s*(" + bookPattern + ")\\.?\\s+(\\d+):(\\d+)-(?:(\\d+):)?(\\d+)\\s*$", "i");
-    const chRange = new RegExp("^\\s*(" + bookPattern + ")\\.?\\s+(\\d+)\\s*-\\s*(\\d+)\\s*$", "i");
+    const crossVerses = new RegExp("^\\s*(" + parseBookPattern + ")\\.?\\s+(\\d+):(\\d+)-(?:(\\d+):)?(\\d+)\\s*$", "i");
+    const chRange = new RegExp("^\\s*(" + parseBookPattern + ")\\.?\\s+(\\d+)\\s*-\\s*(\\d+)\\s*$", "i");
     const out = [];
     for (const p of pieces) {
       let m = p.match(crossVerses);
       if (m) {
-        const book = m[1].replace(/\./g, "");
+        const book = canonicalizeBookName(m[1]);
         const sc = m[2], sv = m[3], ec = m[4] || m[2], ev = m[5];
         const counts = config.chapterVerseCounts && config.chapterVerseCounts[book];
         if (counts) out.push(...expandCrossChapterWithCounts(book, sc, sv, ec, ev, counts));
@@ -578,21 +716,21 @@ const bibleBooks = [
       }
       m = p.match(chRange);
       if (m) {
-        const book = m[1].replace(/\./g, "");
+        const book = canonicalizeBookName(m[1]);
         const sc = m[2], ec = m[3];
         const counts = config.chapterVerseCounts && config.chapterVerseCounts[book];
         if (counts) out.push(...expandChapterRangeWithCounts(book, sc, ec, counts));
         else out.push(...expandChapterRangeNoCounts(book, sc, ec));
         continue;
       }
-      out.push(p.replace(/\./g, ""));
+      out.push(normalizeRef(p));
     }
     return out;
   }
 
   // Display formatter - we still keep this, but the header will be overwritten with the exact original text
   function compressRefForDisplay(ref) {
-    const mainRe = new RegExp("^\\s*(" + bookPattern + ")\\.?\\s+(\\d+)(?::(.*))?\\s*$", "i");
+    const mainRe = new RegExp("^\\s*(" + parseBookPattern + ")\\.?\\s+(\\d+)(?::(.*))?\\s*$", "i");
     const m = ref.match(mainRe);
     if (!m) return ref;
     const book = m[1].replace(/\./g, "");
@@ -710,7 +848,7 @@ const bibleBooks = [
     tip.setAttribute("tabindex", "-1");
 
     const theme = themes[resolveThemeName()];
-    const mobile = isMobile();
+    const mobile = isMobileMode();
     const maxWidth = mobile ? config.mobileMaxWidth : config.maxWidth;
 
     Object.assign(tip.style, {
@@ -786,7 +924,7 @@ const bibleBooks = [
   }
 
   function positionTooltipAt(x, y, target) {
-    const mobile = isMobile();
+    const mobile = isMobileMode();
     const tipRect = tooltip.getBoundingClientRect();
     const targetRect = target.getBoundingClientRect();
 
@@ -851,7 +989,7 @@ const bibleBooks = [
 
     requestAnimationFrame(() => {
       tooltip.style.opacity = "1";
-      if (config.enableAnimations && !isMobile()) tooltip.style.transform = "translateY(0)";
+      if (config.enableAnimations && !isMobileMode()) tooltip.style.transform = "translateY(0)";
     });
 
     if (config.analytics && window.gtag) {
@@ -867,7 +1005,7 @@ const bibleBooks = [
       el.setAttribute("aria-expanded", "false");
     });
     tooltip.style.opacity = "0";
-    if (config.enableAnimations && !isMobile()) tooltip.style.transform = "translateY(4px)";
+    if (config.enableAnimations && !isMobileMode()) tooltip.style.transform = "translateY(4px)";
     setTimeout(() => {
       if (tooltip) { tooltip.style.display = "none"; currentTarget = null; }
     }, 200);
@@ -960,11 +1098,11 @@ const bibleBooks = [
   }
 
   function buildChapterUrl(ref, translation) {
-    const refRe = new RegExp("^\\s*(" + bookPattern + ")\\.?\\s+(\\d+)(?::(\\d+))?", "i");
+    const refRe = new RegExp("^\\s*(" + parseBookPattern + ")\\.?\\s+(\\d+)(?::(\\d+))?", "i");
     const m = String(ref).match(refRe);
     if (!m) return "https://primebible.com/?ref=embed";
 
-    const book = m[1].replace(/\./g, "").trim();
+    const book = canonicalizeBookName(m[1]);
     const chapter = m[2];
     const verse = m[3];
 
@@ -1005,7 +1143,7 @@ const bibleBooks = [
   // NOTE: header includes a span[data-pbv-ref] we will overwrite with the user's exact matched string
   function buildTooltipContent(refForDisplay, translation, textParts) {
     const theme = themes[resolveThemeName()];
-    const mobile = isMobile();
+    const mobile = isMobileMode();
     const frag = document.createDocumentFragment();
 
     if (config.showReference) {
@@ -1146,7 +1284,8 @@ const bibleBooks = [
     return frag;
   }
 
-  function buildErrorContent(ref, error) {
+  function buildErrorContent(ref, error, translation) {
+    const activeTranslation = translation || config.translation;
     const theme = themes[resolveThemeName()];
     const frag = document.createDocumentFragment();
     const container = document.createElement("div");
@@ -1163,10 +1302,10 @@ const bibleBooks = [
     retry.style.cssText = "background: " + theme.footerLink + "; color: white; border: none; padding: 8px 16px; border-radius: 6px; font-size: 13px; cursor: pointer; transition: opacity 0.2s ease;";
     retry.textContent = "Try Again";
     retry.onclick = async () => {
-      const cacheKey = normalizeRef(ref) + "::" + config.translation;
+      const cacheKey = normalizeRef(ref) + "::" + activeTranslation;
       cache.delete(cacheKey);
       cacheTimestamps.delete(cacheKey);
-      const content = await fetchPassage(ref);
+      const content = await fetchPassage(ref, null, activeTranslation);
       tooltip.innerHTML = "";
       tooltip.appendChild(content);
     };
@@ -1180,9 +1319,10 @@ const bibleBooks = [
   // ------------------------------------------------------------
   // 7. Fetch passage and cache
   // ------------------------------------------------------------
-  async function fetchPassage(rawRef, externalSignal) {
+  async function fetchPassage(rawRef, externalSignal, translationOverride) {
+    const activeTranslation = translationOverride || config.translation;
     const normalized = normalizeRef(rawRef);
-    const cacheKey = normalized + "::" + config.translation;
+    const cacheKey = normalized + "::" + activeTranslation;
 
     if (cache.has(cacheKey) && !isExpired(cacheKey)) {
       const factory = cache.get(cacheKey);
@@ -1197,11 +1337,11 @@ const bibleBooks = [
         const limit = pLimit(Math.max(1, config.maxConcurrentFetches || 4));
         const texts = await Promise.all(
           pieces.map(piece =>
-            limit(() => fetchSingleRef(piece, config.translation, externalSignal))
+            limit(() => fetchSingleRef(piece, activeTranslation, externalSignal))
               .catch(() => "[Unable to load: " + piece + "]")
           )
         );
-        const factory = () => buildTooltipContent(normalized, config.translation, texts);
+        const factory = () => buildTooltipContent(normalized, activeTranslation, texts);
         cache.set(cacheKey, factory);
         cacheTimestamps.set(cacheKey, Date.now());
         manageCacheSize();
@@ -1210,7 +1350,7 @@ const bibleBooks = [
         if (typeof config.onError === "function") {
           try { config.onError(err, normalized); } catch {}
         }
-        const factory = () => buildErrorContent(normalized, err);
+        const factory = () => buildErrorContent(normalized, err, activeTranslation);
         cache.set(cacheKey, factory);
         cacheTimestamps.set(cacheKey, Date.now());
         const t = setTimeout(() => {
@@ -1232,6 +1372,14 @@ const bibleBooks = [
   // ------------------------------------------------------------
   // 8. Interactive wiring (header override to exact original text)
   // ------------------------------------------------------------
+  function refForElement(span) {
+    return span.dataset.refNormalized || span.dataset.ref || (span.textContent || "").trim();
+  }
+
+  function translationForElement(span) {
+    return span.dataset.translation || config.translation;
+  }
+
   function prefetchNearbyRefs(span) {
     if (!config.prefetch) return;
     const allRefs = document.querySelectorAll(".pbv-ref");
@@ -1239,7 +1387,9 @@ const bibleBooks = [
     [-1, 1].forEach(offset => {
       const nearbyRef = allRefs[currentIdx + offset];
       if (nearbyRef && nearbyRef.dataset.refNormalized) {
-        requestIdleCallback(() => { fetchPassage(nearbyRef.dataset.refNormalized).catch(() => {}); }, { timeout: 2000 });
+        requestIdleCallback(() => {
+          fetchPassage(refForElement(nearbyRef), null, translationForElement(nearbyRef)).catch(() => {});
+        }, { timeout: 2000 });
       }
     });
   }
@@ -1248,7 +1398,7 @@ const bibleBooks = [
     if (span.dataset.pbvBound === "1") return;
     span.dataset.pbvBound = "1";
 
-    const mobile = isMobile();
+    const mobile = isMobileMode();
     const theme = themes[resolveThemeName()];
 
     span.style.cssText = `
@@ -1288,10 +1438,10 @@ const bibleBooks = [
           activeControllers.add(ctrl);
           const token = {};
           openTokenByEl.set(span, token);
-          const loading = createLoadingNode(span.dataset.refNormalized || span.dataset.ref);
+          const loading = createLoadingNode(refForElement(span));
           showTooltip(loading, e.clientX, e.clientY, span);
           try {
-            const content = await fetchPassage(span.dataset.refNormalized || span.dataset.ref, ctrl.signal);
+            const content = await fetchPassage(refForElement(span), ctrl.signal, translationForElement(span));
             if (ctrl.signal.aborted) return;
             if (openTokenByEl.get(span) !== token || currentTarget !== span) return;
             showTooltip(content, e.clientX, e.clientY, span);
@@ -1312,6 +1462,7 @@ const bibleBooks = [
       });
 
       span.addEventListener("mouseleave", (e) => {
+        clearTimeout(hoverTimer);
         const rt = e.relatedTarget;
         if (rt && rt.closest && (rt.closest(".pbv-ref") || rt.closest("#pbv-tooltip"))) {
           // staying in interactive region
@@ -1360,10 +1511,10 @@ const bibleBooks = [
           activeControllers.add(ctrl);
           const token = {};
           openTokenByEl.set(span, token);
-          const loading = createLoadingNode(span.dataset.refNormalized || span.dataset.ref);
+          const loading = createLoadingNode(refForElement(span));
           showTooltip(loading, rect.left + rect.width / 2, rect.top, span);
           try {
-            const content = await fetchPassage(span.dataset.refNormalized || span.dataset.ref, ctrl.signal);
+            const content = await fetchPassage(refForElement(span), ctrl.signal, translationForElement(span));
             if (ctrl.signal.aborted) return;
             if (openTokenByEl.get(span) !== token || currentTarget !== span) return;
             showTooltip(content, rect.left + rect.width / 2, rect.top, span);
@@ -1390,10 +1541,10 @@ const bibleBooks = [
       activeControllers.add(ctrl);
       const token = {};
       openTokenByEl.set(span, token);
-      const loading = createLoadingNode(span.dataset.refNormalized || span.dataset.ref);
+      const loading = createLoadingNode(refForElement(span));
       showTooltip(loading, rect.left + rect.width / 2, rect.top, span);
       try {
-        const content = await fetchPassage(span.dataset.refNormalized || span.dataset.ref, ctrl.signal);
+        const content = await fetchPassage(refForElement(span), ctrl.signal, translationForElement(span));
         if (ctrl.signal.aborted) return;
         if (openTokenByEl.get(span) !== token || currentTarget !== span) return;
         showTooltip(content, rect.left + rect.width / 2, rect.top, span);
@@ -1417,11 +1568,36 @@ const bibleBooks = [
   // ------------------------------------------------------------
   // 9. Scanning
   // ------------------------------------------------------------
+  function bindExistingRefs(root) {
+    const refs = [];
+    if (root && root.nodeType === Node.ELEMENT_NODE && root.matches && root.matches(".pbv-ref")) refs.push(root);
+    if (root && root.querySelectorAll) {
+      root.querySelectorAll(".pbv-ref").forEach(el => refs.push(el));
+    }
+
+    refs.forEach(span => {
+      if (!span.dataset.ref) span.dataset.ref = (span.textContent || "").trim();
+      if (!span.dataset.refNormalized && span.dataset.ref) span.dataset.refNormalized = normalizeRef(span.dataset.ref);
+      if (span.dataset.translation) span.dataset.translation = String(span.dataset.translation).trim().toUpperCase();
+      if (span.dataset.ref) makeInteractive(span);
+    });
+  }
+
+  function closestSafe(element, selector) {
+    if (!element || !element.closest || !selector) return null;
+    try {
+      return element.closest(selector);
+    } catch (err) {
+      if (config.debug && typeof console !== "undefined" && console.warn) console.warn("PrimeBible: invalid exclude selector", selector, err);
+      return null;
+    }
+  }
+
   function shouldProcessNode(node) {
     if (!node.parentNode) return false;
     const excludeSelector = config.excludeSelectors.join(",");
-    if (node.parentNode.closest && node.parentNode.closest(excludeSelector)) return false;
-    if (node.parentNode.closest && node.parentNode.closest(".pbv-ref, #pbv-tooltip")) return false;
+    if (closestSafe(node.parentNode, excludeSelector)) return false;
+    if (closestSafe(node.parentNode, ".pbv-ref, #pbv-tooltip")) return false;
     const val = node.nodeValue || "";
     if (!referenceTestRegex.test(val)) return false;
     if (val.length > config.maxNodeTextLength) return false;
@@ -1470,6 +1646,7 @@ const bibleBooks = [
   function scanElement(root, options = {}) {
     const { immediate = false } = options;
     const walk = () => {
+      bindExistingRefs(root);
       const walker = document.createTreeWalker(
         root,
         NodeFilter.SHOW_TEXT,
@@ -1509,7 +1686,7 @@ const bibleBooks = [
             scanElement(el, { immediate: true });
             el.dataset.pbvProcessed = "true";
             intersectionObserver.unobserve(el);
-            el.removeAttribute("data-pbvObserved");
+            el.removeAttribute("data-pbv-observed");
           }
         });
       }, { rootMargin: "100px" });
@@ -1589,14 +1766,18 @@ const bibleBooks = [
             tooltip.style.backgroundImage = theme.background;
             tooltip.style.color = theme.text;
             tooltip.style.borderColor = theme.border;
-            tooltip.style.boxShadow = isMobile() ? theme.mobileShadow : theme.shadow;
+            tooltip.style.boxShadow = isMobileMode() ? theme.mobileShadow : theme.shadow;
           }
           cache.clear();
           cacheTimestamps.clear();
         }
       };
-      if (q.addEventListener) q.addEventListener("change", onChange);
-      else if (q.addListener) q.addListener(onChange);
+      if (q.addEventListener) {
+        addManagedListener(q, "change", onChange);
+      } else if (q.addListener) {
+        q.addListener(onChange);
+        globalCleanup.push(() => { try { q.removeListener(onChange); } catch {} });
+      }
     }
   }
 
@@ -1615,12 +1796,50 @@ const bibleBooks = [
     eq("display Mat. 5:3-12", compressRefForDisplay("Mat. 5:3-12"), "Mat 5:3-12");
     eq("display 1 Cor. 13:1-13; 14:1", compressRefForDisplay("1 Cor. 13:1-13; 14:1"), "1 Cor 13:1-13; 14:1");
 
+    // Detection must NOT match everyday prose (v2.5.3 regression tests)
+    eq("no-match 'there is 5'", referenceTestRegex.test("There is 5 of them"), false);
+    eq("no-match 'I am 24'", referenceTestRegex.test("I am 24 years old"), false);
+    eq("no-match 'so 3 people'", referenceTestRegex.test("so 3 people came"), false);
+    eq("no-match 'Act 2 of the play'", referenceTestRegex.test("Act 2 of the play"), false);
+    eq("no-match 'is 2,000'", referenceTestRegex.test("the price is 2,000 dollars"), false);
+    eq("no-match time 'Luke 3pm'", referenceTestRegex.test("meet Luke 3pm sharp"), false);
+    eq("no-match year 'Rev 2026'", referenceTestRegex.test("Rev 2026 edition"), false);
+    eq("no-match ordinal 'John 3rd'", referenceTestRegex.test("John 3rd of his name"), false);
+
+    // Detection must still match real references
+    eq("match 'John 3:16'", referenceTestRegex.test("John 3:16 is famous"), true);
+    eq("match 'Ps 23:1'", referenceTestRegex.test("read Ps 23:1 today"), true);
+    eq("match 'Jn 3:16'", referenceTestRegex.test("see Jn 3:16"), true);
+    eq("match '1 Cor 13:4-7'", referenceTestRegex.test("love is 1 Cor 13:4-7"), true);
+    eq("match 'Mat. 5:3-12'", referenceTestRegex.test("Mat. 5:3-12"), true);
+    eq("match 'Genesis 1'", referenceTestRegex.test("Genesis 1 tells us"), true);
+
+    // Fetch normalization should send canonical book names to the API
+    eq("normalize Ac", normalizeRef("Ac 2:1"), "Acts 2:1");
+    eq("normalize Rm", normalizeRef("Rm 8:1-4"), "Romans 8:1-4");
+    eq("normalize Ga", normalizeRef("Ga 5:22"), "Galatians 5:22");
+    eq("normalize Lu", normalizeRef("Lu 2:1"), "Luke 2:1");
+    eq("normalize compact 2Sa", normalizeRef("2Sa 7:12-16"), "2 Samuel 7:12-16");
+
     // Split pieces
     eq("split John 3:16-4:2", splitRefIntoPieces("John 3:16-4:2"), ["John 3:16-4:2"]);
     eq("split Genesis 1:31-2:3", splitRefIntoPieces("Genesis 1:31-2:3"), ["Genesis 1:31-2:3"]);
-    eq("split 1 Cor. 13:1-13; 14:1", splitRefIntoPieces("1 Cor. 13:1-13; 14:1"), ["1 Cor 13:1-13", "1 Cor 14:1"]);
+    eq("split 1 Cor. 13:1-13; 14:1", splitRefIntoPieces("1 Cor. 13:1-13; 14:1"), ["1 Corinthians 13:1-13", "1 Corinthians 14:1"]);
+    eq("split Ac shorthand", splitRefIntoPieces("Ac 2:1-4; 3:1"), ["Acts 2:1-4", "Acts 3:1"]);
+
+    // Bundled counts expansion
+    eq("expand bundled-counts John 3:16-4:2",
+      expandPiecesWithVerseCounts(["John 3:16-4:2"]),
+      ["John 3:16-36", "John 4:1-2"]
+    );
+    eq("expand bundled-counts Genesis 1:31-2:3",
+      expandPiecesWithVerseCounts(["Genesis 1:31-2:3"]),
+      ["Genesis 1:31-31", "Genesis 2:1-3"]
+    );
 
     // No-counts fallback expansion
+    const savedCounts = config.chapterVerseCounts;
+    config.chapterVerseCounts = null;
     eq("expand no-counts John 3:16-4:2",
       expandPiecesWithVerseCounts(["John 3:16-4:2"]),
       ["John 3:16-999", "John 4:1-2"]
@@ -1633,6 +1852,11 @@ const bibleBooks = [
       expandPiecesWithVerseCounts(["John 3-4"]),
       ["John 3:1-999", "John 4:1-999"]
     );
+    eq("expand shorthand no-counts 2Sa 7-8",
+      expandPiecesWithVerseCounts(["2Sa 7-8"]),
+      ["2 Samuel 7:1-999", "2 Samuel 8:1-999"]
+    );
+    config.chapterVerseCounts = savedCounts;
 
     return { ok: results.every(r => r.ok), results };
   }
@@ -1641,7 +1865,7 @@ const bibleBooks = [
   // 11. Public API
   // ------------------------------------------------------------
   window.PrimeBible = {
-    VERSION: "2.5.2",
+    VERSION: "2.5.3",
     scan: (element = document.body) => { scanElement(element, { immediate: true }); },
     clearCache: () => { cache.clear(); cacheTimestamps.clear(); pending.clear(); },
     config: (newConfig) => {
@@ -1652,6 +1876,7 @@ const bibleBooks = [
       if (Object.prototype.hasOwnProperty.call(newConfig, "maxConcurrentFetches") && newConfig.maxConcurrentFetches !== config.maxConcurrentFetches) abortNeeded = true;
 
       Object.assign(config, newConfig);
+      if (!config.chapterVerseCounts) config.chapterVerseCounts = DEFAULT_CHAPTER_VERSE_COUNTS;
 
       if (abortNeeded) {
         abortAllActiveRequests();
@@ -1700,13 +1925,15 @@ const bibleBooks = [
       cache.clear();
       cacheTimestamps.clear();
       pending.clear();
+      globalCleanup.forEach(fn => fn());
+      globalCleanup.length = 0;
     },
     getStats: () => ({
       cacheSize: cache.size,
       pendingRequests: pending.size,
       referencesFound: document.querySelectorAll(".pbv-ref").length,
       theme: resolveThemeName(),
-      isMobile: isMobile(),
+      isMobile: isMobileMode(),
       tooltipOpen: !!(tooltip && tooltip.style.display === "block"),
       hoverState: { overTooltip, overAnyRef }
     }),

@@ -557,6 +557,45 @@
   text-decoration: underline;
 }
 
+.pbv-test-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.pbv-test-row .pbv-input {
+  flex: 1;
+}
+
+.pbv-test-result {
+  display: none;
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: var(--pbv-radius-sm);
+  line-height: 1.6;
+}
+
+.pbv-test-result.is-loading,
+.pbv-test-result.is-success,
+.pbv-test-result.is-error {
+  display: block;
+}
+
+.pbv-test-result.is-loading {
+  background: #f6f7f7;
+  border: 1px solid var(--pbv-border);
+}
+
+.pbv-test-result.is-success {
+  background: #f0f6fc;
+  border: 1px solid #72aee6;
+}
+
+.pbv-test-result.is-error {
+  background: #fcf0f1;
+  border: 1px solid #d63638;
+}
+
 /* WordPress Settings Errors Override */
 .pbv-admin-wrap .notice,
 .pbv-admin-wrap .error,
@@ -633,6 +672,11 @@
     flex-direction: column;
     gap: 16px;
     align-items: flex-start;
+  }
+
+  .pbv-test-row {
+    flex-direction: column;
+    align-items: stretch;
   }
   
   .pbv-save-button {

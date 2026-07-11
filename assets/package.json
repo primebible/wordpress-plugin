@@ -5,6 +5,6 @@
     "terser": "^5.36.0"
   },
   "scripts": {
-    "build": "npx terser assets/js/primebible-embed.js --compress --mangle --keep-fnames --keep-classnames --comments \"/^!/\" --output assets/js/primebible-embed.min.js"
+    "build": "npx terser js/primebible-embed.js --compress --mangle --keep-fnames --keep-classnames --comments \"/^!/\" --output js/primebible-embed.min.js"
   }
 }

@@ -6,7 +6,7 @@
 
 Beautiful, mobile-friendly Bible verse tooltips for WordPress. Auto-detects references and shows instant previews.
 
-[Download from WordPress.org](https://wordpress.org/plugins/primebible/#installation) | [Documentation]([https://primebible.com/docs/wordpress-plugin](https://wordpress.org/plugins/primebible/#installation)) | [Report Bug](https://github.com/primebible/wordpress-plugin/issues) | [Request Feature](https://github.com/primebible/wordpress-plugin/issues)
+[Download from WordPress.org](https://wordpress.org/plugins/primebible/) | [Documentation](https://primebible.com/docs/wordpress-plugin) | [Report Bug](https://github.com/primebible/wordpress-plugin/issues) | [Request Feature](https://github.com/primebible/wordpress-plugin/issues)
 
 ---
 
@@ -26,16 +26,6 @@ Beautiful, mobile-friendly Bible verse tooltips for WordPress. Auto-detects refe
 - 🌍 **Multiple translations** - KJV, ESV, ASV, WEB, and more
 - ♿ **Accessible** - keyboard navigation and screen reader friendly
 - 🚀 **Performance** - <50kb, deferred loading, minimal DOM impact
-
-## 📸 Screenshots
-
-### Verse Tooltip
-![Verse Tooltip](assets/screenshot-1.png)
-*Hover or tap any Bible reference to see an instant verse preview*
-
-### Admin Settings
-![Admin Settings](assets/screenshot-2.png)
-*Full control over translations, themes, and behavior*
 
 ## 🚀 Quick Start
 
@@ -75,6 +65,12 @@ For more context, read Romans 8:1-4 and Ephesians 2:8-9.
 
 The references automatically become interactive tooltips. No manual markup required!
 
+For exact control over clickable text, use the shortcode:
+
+```text
+[primebible ref="Romans 8:1" translation="ESV"]this promise[/primebible]
+```
+
 ## ⚙️ Configuration
 
 Access settings at **Settings → PrimeBible** in WordPress admin.
@@ -104,20 +100,20 @@ wordpress-plugin/
 ├── .github/
 │   └── FUNDING.yml              # GitHub Sponsors configuration
 ├── assets/
-│   ├── assets/
+│   ├── js/
 │   │   ├── primebible-embed.js     # Source JavaScript
 │   │   └── primebible-embed.min.js # Minified production JS
 │   ├── css/
 │   │   └── admin.css               # Admin panel styles
-│   ├── package.json                # Build configuration (terser)
-│   └── .gitkeep                    # Folder placeholder
-├── .gitattributes              # GitHub Linguist configuration
-├── CHANGELOG.md                # Version history
-├── CONTRIBUTING.md             # Contribution guidelines
-├── LICENSE                     # GPL-2.0+ license
-├── README.md                   # This file
-├── primebible-verse-preview.php # Main plugin file (861 lines)
-└── uninstall.php               # Cleanup on uninstall
+│   └── package.json                # Build configuration (terser)
+├── .gitattributes               # GitHub Linguist configuration
+├── CHANGELOG.md                 # Version history
+├── CONTRIBUTING.md              # Contribution guidelines
+├── LICENSE                      # GPL-2.0+ license
+├── README.md                    # This file
+├── readme.txt                   # WordPress.org plugin readme
+├── primebible-verse-preview.php # Main plugin file
+└── uninstall.php                # Cleanup on uninstall
 ```
 
 ### Local Development
@@ -154,6 +150,19 @@ Contributions are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) first.
 - 📖 **Improve documentation**
 
 ## 📋 Changelog
+
+### [2.5.2] - 2026-06-11
+
+#### Fixed
+- Short book abbreviations are normalized before API requests
+- `Ac`, `Rm`, `Ga`, `Lu`, and compact numbered forms such as `2Sa` now load correctly
+- Delayed hover previews are canceled when the pointer leaves a reference
+- Invalid exclude selectors no longer stop scanning
+
+#### Added
+- Translation dropdown and API test tool in settings
+- `[primebible ref="John 3:16"]` shortcode for manual references
+- Bundled chapter verse counts for accurate cross-chapter expansion
 
 ### [2.5.1] - 2025-11-15
 
@@ -197,7 +206,7 @@ PrimeBible is a **501(c)(3) nonprofit** dedicated to making deep Bible study acc
 ## 💬 Support
 
 - **Documentation**: [primebible.com/docs/wordpress-plugin](https://primebible.com/docs/wordpress-plugin)
-- **WordPress.org Forum**: [Support Forum](https://wordpress.org/support/plugin/primebible-verse-preview/)
+- **WordPress.org Forum**: [Support Forum](https://wordpress.org/support/plugin/primebible/)
 - **GitHub Issues**: [Report Bug](https://github.com/primebible/wordpress-plugin/issues)
 - **Email**: support@primebible.com
 - **Response Time**: 24-48 hours
@@ -209,7 +218,6 @@ We're committed to excellent support. If you have an issue, we'll help you resol
 If this plugin blesses your ministry:
 
 - ⭐ Star this repository
-- 📝 Leave a [5-star review on WordPress.org](#)
 - 📢 Share with other Christian content creators
 - 💝 [Donate](https://primebible.com/donate) to support nonprofit Bible tools
 

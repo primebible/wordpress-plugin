@@ -1,0 +1,5 @@
+# Local artifacts
+*.zip
+wordpress-plugin-main/
+node_modules/
+.claude/

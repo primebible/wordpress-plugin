@@ -3,9 +3,9 @@ Contributors: primebible
 Donate link: https://primebible.com/donate
 Tags: bible, scripture, tooltip, verse, christianity
 Requires at least: 5.8
-Tested up to: 6.8
+Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 2.5.1
+Stable tag: 2.5.3
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -17,7 +17,10 @@ PrimeBible Verse Preview transforms Bible references in your content into intera
 
 = Key Features =
 * Automatic Detection - Finds Bible references like "John 3:16" or "Romans 8:1-4" in your content
+* Manual References - Add explicit references with the `[primebible]` shortcode
 * Multiple Translations - Choose from KJV, ESV, ASV, WEB, and more
+* Translation Selector - Pick from supported translations instead of typing codes manually
+* API Test Tool - Verify the selected translation and endpoint from the settings screen
 * Mobile Optimized - Touch-friendly with long-press support for mobile devices
 * Lightning Fast - Aggressive caching, lazy loading, and prefetch optimization
 * Fully Customizable - Control appearance, behavior, timing, and styling
@@ -38,8 +41,9 @@ PrimeBible Verse Preview transforms Bible references in your content into intera
 * Smart Caching - LRU cache with configurable size and expiry
 * Per-Post Control - Disable scanning on specific posts/pages via meta box
 * Exclude Selectors - Prevent scanning in code blocks, comments, etc.
-* CSP Compatible - Support for Content Security Policy nonce
+* CSP Aware - Injected styles carry a configurable nonce attribute (works with static-nonce CSP setups; per-request rotating nonces are not supported)
 * Chapter Verse Counts - Optional JSON config for accurate verse range detection
+* Bundled Verse Counts - Accurate cross-chapter expansion works out of the box
 * Prefetch - Intelligently preloads nearby references
 * Analytics Ready - Optional Google Analytics integration
 * Custom CSS - Add your own styles to match your theme
@@ -72,7 +76,7 @@ PrimeBible Verse Preview transforms Bible references in your content into intera
 
 = Manual Installation =
 1.  Download the plugin zip file
-2.  Extract to `/wp-content/plugins/primebible-verse-preview/`
+2.  Extract to `/wp-content/plugins/primebible/` (the zip extracts to a `primebible` folder)
 3.  Activate through the 'Plugins' menu in WordPress
 4.  Configure at 'Settings → PrimeBible'
 
@@ -83,13 +87,22 @@ PrimeBible Verse Preview transforms Bible references in your content into intera
 4.  Adjust timing and behavior settings if desired
 5.  Save changes and test on a post with Bible references
 
+= Manual References =
+Use the shortcode when you want exact control over the clickable text:
+
+`[primebible ref="John 3:16"]`
+
+You can also override the translation for a single reference:
+
+`[primebible ref="Romans 8:1" translation="ESV"]this promise[/primebible]`
+
 == Frequently Asked Questions ==
 
 = Is this plugin really free? =
 Yes, 100% free with no hidden costs, premium tiers, or upsells. PrimeBible is a 501(c)(3) nonprofit organization making Bible study tools accessible to everyone.
 
 = What Bible translations are available? =
-Currently supports: KJV (King James Version), ESV (English Standard Version), ASV (American Standard Version), WEB (World English Bible), and more. Visit primebible.com for the full list.
+The settings screen includes KJV, ESV, NIV, ASV, WEB, NET, NASB, NKJV, NLT, and CSB. Developers can customize this list with the `primebible_available_translations` filter.
 
 = Does it work on mobile devices? =
 Absolutely. The plugin is mobile-first with touch-optimized interactions including long-press to view verses. Tooltips automatically adjust size and position for small screens.
@@ -145,7 +158,7 @@ Yes. In 'Settings → PrimeBible → Post types', you can select which post type
 
 = What if I need help? =
 1.  Check this FAQ
-2.  Visit the [Support Forum](https://wordpress.org/support/plugin/primebible-verse-preview/)
+2.  Visit the [Support Forum](https://wordpress.org/support/plugin/primebible/)
 3.  Read documentation at primebible.com/docs
 4.  Contact support at support@primebible.com
 
@@ -166,6 +179,27 @@ Absolutely! The plugin is GPL-licensed. You can:
 
 == Changelog ==
 
+Full history: see CHANGELOG.md on GitHub (github.com/primebible/wordpress-plugin).
+
+= 2.5.3 - 2026-07-11 =
+* Fixed: Reference detection no longer matches everyday words — prose like "there is 5", "I am 24", or "so 3 people" was being wrapped as a verse link (and "is 5" fetched 1 Samuel 5). Ambiguous short aliases still work in the shortcode but never trigger auto-detection
+* Fixed: Times ("3pm"), ordinals ("3rd"), years, and percentages next to book-like words no longer create false verse links
+* Fixed: The "Load in Admin Dashboard" setting now actually loads the script in wp-admin
+* Fixed: The documented `primebible_should_load` filter is now implemented
+* Security: Inline config JSON hardened so stored settings values cannot break out of the script tag
+* Added: 14 detection regression tests in `PrimeBible.runTests()`
+
+= 2.5.2 - 2026-06-11 =
+* Fixed: Short book abbreviations are normalized before API requests
+* Fixed: `Ac`, `Rm`, `Ga`, `Lu`, and compact numbered forms such as `2Sa` now resolve to their full book names internally
+* Fixed: Delayed hover previews are canceled when the pointer leaves a reference
+* Fixed: Invalid exclude selectors no longer stop content scanning
+* Added: Translation dropdown and API test tool in settings
+* Added: `[primebible ref="John 3:16"]` shortcode for manual references
+* Added: Bundled chapter verse counts for accurate cross-chapter expansion
+* Updated: `mobileOptimized` now controls mobile tooltip layout instead of being a dead setting
+* Updated: Release metadata now matches plugin version 2.5.2
+
 = 2.5.1 - 2025-11-15 =
 * Added: Chapter verse counts awareness for accurate range detection
 * Added: `maxMatchesPerNode` and `maxNodeTextLength` performance limits
@@ -174,6 +208,12 @@ Absolutely! The plugin is GPL-licensed. You can:
 * Improved: Cache efficiency with LRU algorithm
 * Fixed: Edge case with overlapping verse ranges
 * Fixed: Tooltip positioning on narrow viewports
+
+= 2.5.0 - 2025-11-01 =
+* Added: Multi-translation support (KJV, ESV, ASV, WEB) with admin selector
+* Added: Aggressive caching with configurable TTL, lazy tooltips, prefetch
+* Changed: Redesigned admin settings page and tooltip design
+* Fixed: WordPress 6.4 compatibility, PHP 8.2 deprecations, theme CSS conflicts
 
 = 2.0.0 - 2025-10-01 =
 * Major: Complete rewrite for performance and reliability
@@ -209,6 +249,12 @@ Absolutely! The plugin is GPL-licensed. You can:
 * Admin settings panel
 
 == Upgrade Notice ==
+
+= 2.5.3 =
+Important fix: everyday words like "is 5" or "am 24" are no longer detected as Bible references. Also fixes the Load-in-Admin setting and hardens settings output. Recommended for all users.
+
+= 2.5.2 =
+Fixes shorthand Bible reference loading and adds a translation selector, API test tool, shortcode support, and bundled verse counts.
 
 = 2.5.1 =
 Recommended update: Performance improvements, counts-aware detection, and mobile enhancements. Fully backward compatible.
@@ -268,29 +314,37 @@ Bible translations are subject to their respective copyright holders. PrimeBible
 Filter: `primebible_config`
 Modify the JavaScript configuration before it's output.
 
- add_filter('primebible_config', function($config) {
-     $config['translation'] = 'ESV';
-     $config['theme'] = 'dark';
-     return $config;
- });
+    add_filter('primebible_config', function($config) {
+        $config['translation'] = 'ESV';
+        $config['theme'] = 'dark';
+        return $config;
+    });
+
+Filter: `primebible_available_translations`
+Customize the translation dropdown.
+
+    add_filter('primebible_available_translations', function($translations) {
+        $translations['YLT'] = 'Young\'s Literal Translation';
+        return $translations;
+    });
 
 Action: `primebible_before_enqueue`
 Runs before scripts are enqueued (if loading conditions are met).
 
- add_action('primebible_before_enqueue', function() {
-     // Your code here
- });
+    add_action('primebible_before_enqueue', function() {
+        // Your code here
+    });
 
 = Programmatic Control =
 
 Disable on specific page by template:
 
- add_filter('primebible_should_load', function($should_load) {
-     if (is_page_template('template-landing.php')) {
-         return false;
-     }
-     return $should_load;
- });
+    add_filter('primebible_should_load', function($should_load) {
+        if (is_page_template('template-landing.php')) {
+            return false;
+        }
+        return $should_load;
+    });
 
 = GitHub Repository =
 Development happens on GitHub: [github.com/primebible/wordpress-plugin](https://github.com/primebible/wordpress-plugin)
@@ -304,7 +358,7 @@ Contributions welcome:
 
 == Support ==
 Documentation: [primebible.com/docs/wordpress-plugin](https://primebible.com/docs/wordpress-plugin)
-Support Forum: [wordpress.org/support/plugin/primebible-verse-preview](https://wordpress.org/support/plugin/primebible-verse-preview)
+Support Forum: [wordpress.org/support/plugin/primebible](https://wordpress.org/support/plugin/primebible)
 Email: support@primebible.com
 Average Response Time: 24-48 hours
 

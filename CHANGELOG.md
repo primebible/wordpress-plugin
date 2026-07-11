@@ -8,10 +8,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Planned
 - WordPress.org plugin directory submission
-- Additional Bible translation support (NIV, NASB, NET)
+- Internationalization (i18n) support
 - Dark mode theme improvements
 - Admin dashboard analytics
-- Internationalization (i18n) support
+
+---
+
+## [2.5.3] - 2026-07-11
+
+### Fixed
+- **Reference detection no longer matches everyday words.** Short book
+  aliases ("I S", "Am", "So", "Ac", "Act", "Song", "GA", "ES", ...) collapsed
+  into common English once whitespace was made optional, so prose like
+  "there is 5", "I am 24", or "so 3 people" was wrapped as a verse link —
+  and "is 5" even fetched 1 Samuel 5. Ambiguous aliases now still work in
+  the `[primebible]` shortcode and normalization but never trigger
+  auto-detection.
+- Chapter/verse numbers are capped at 3 digits and guarded against times
+  ("3pm"), ordinals ("3rd"), years ("2026"), and percentages, eliminating
+  date/time/score false positives.
+- The "Load in Admin Dashboard" setting works now (the embed script was
+  never hooked to `admin_enqueue_scripts`, so the toggle did nothing).
+- The documented `primebible_should_load` filter is now actually implemented.
+- Inline config JSON escapes `<` and `&`, so a stored `</script>` in any
+  settings field can no longer break out of the script tag (hardening;
+  reaching the fields required admin capability).
+- Exclude selectors and chapter-count book names are tag-stripped on save.
+- Stale `data-pbv-observed` attributes are cleaned up correctly (attribute
+  name typo made the removal a no-op).
+- `destroy()` removes the module-level resize/orientation/color-scheme
+  listeners, preventing slow listener leaks under SPA-style reloads.
+
+### Added
+- 14 detection regression tests in the built-in `PrimeBible.runTests()` suite.
+
+---
+
+## [2.5.2] - 2026-06-11
+
+### Fixed
+- Short book abbreviations are normalized before API requests
+- `Ac`, `Rm`, `Ga`, `Lu`, and compact numbered forms such as `2Sa` resolve to full book names internally
+- Delayed hover previews are canceled when the pointer leaves a reference
+- Invalid exclude selectors no longer stop content scanning
+
+### Added
+- Translation dropdown and API test tool in settings
+- `[primebible ref="John 3:16"]` shortcode for manual references
+- Bundled chapter verse counts for accurate cross-chapter expansion
+
+### Changed
+- Release metadata now matches plugin version 2.5.2
+- `mobileOptimized` now controls mobile tooltip layout instead of being a dead setting
 
 ---
 

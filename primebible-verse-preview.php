@@ -3,7 +3,7 @@
  * Plugin Name: PrimeBible Verse Preview
  * Plugin URI: https://github.com/primebible/wordpress-plugin
  * Description: Auto-detects Bible references in your content and shows a beautiful, mobile-friendly tooltip preview powered by PrimeBible. Includes admin settings, caching controls, per-post disable, and counts-aware expansion.
- * Version: 2.5.1
+ * Version: 2.5.3
  * Author: PrimeBible
  * Author URI: https://primebible.com
  * License: GPL-2.0+
@@ -19,7 +19,7 @@ if (!defined('ABSPATH')) {
 
 if (!class_exists('PrimeBible_Verse_Preview')) {
   final class PrimeBible_Verse_Preview {
-    const VERSION = '2.5.1';
+    const VERSION = '2.5.3';
     const OPTION  = 'primebible_settings';
     const META_DISABLE = '_primebible_disable';
     const HANDLER = 'primebible-embed';
@@ -39,7 +39,11 @@ if (!class_exists('PrimeBible_Verse_Preview')) {
       add_action('admin_init', array($this, 'register_settings'));
       add_action('admin_enqueue_scripts', array($this, 'admin_enqueue_scripts'));
       add_action('wp_enqueue_scripts', array($this, 'enqueue'));
+      // The "Load in Admin Dashboard" setting: wp_enqueue_scripts never fires
+      // in wp-admin, so the embed must also hook admin_enqueue_scripts.
+      add_action('admin_enqueue_scripts', array($this, 'enqueue'));
       add_filter('script_loader_tag', array($this, 'add_defer_attribute'), 10, 3);
+      add_shortcode('primebible', array($this, 'shortcode'));
 
       // Per-post disable
       add_action('add_meta_boxes', array($this, 'add_metabox'));
@@ -97,6 +101,24 @@ if (!class_exists('PrimeBible_Verse_Preview')) {
       );
     }
 
+    private function available_translations() {
+      $translations = array(
+        'KJV' => 'King James Version',
+        'ESV' => 'English Standard Version',
+        'NIV' => 'New International Version',
+        'ASV' => 'American Standard Version',
+        'WEB' => 'World English Bible',
+        'NET' => 'New English Translation',
+        'NASB' => 'New American Standard Bible',
+        'NKJV' => 'New King James Version',
+        'NLT' => 'New Living Translation',
+        'CSB' => 'Christian Standard Bible',
+      );
+
+      $translations = apply_filters('primebible_available_translations', $translations);
+      return is_array($translations) ? $translations : array('KJV' => 'King James Version');
+    }
+
     public function admin_menu() {
       add_options_page(
         'PrimeBible Verse Preview',
@@ -140,7 +162,9 @@ if (!class_exists('PrimeBible_Verse_Preview')) {
       }
       $out = array();
       foreach ($arr as $s) {
-        $s = trim((string)$s);
+        // CSS selectors never legitimately contain markup; stripping tags
+        // keeps "</script>" payloads out of the inline config JSON.
+        $s = trim(wp_strip_all_tags((string)$s));
         if ($s !== '') {
           $out[] = $s;
         }
@@ -162,19 +186,25 @@ if (!class_exists('PrimeBible_Verse_Preview')) {
         $errorMsg = 'Invalid JSON for chapter verse counts. Value ignored.';
         return array();
       }
+      $clean = array();
       foreach ($decoded as $book => $chapters) {
         if (!is_array($chapters)) {
           $errorMsg = 'chapterVerseCounts must be an object of { "Book": { "1": 31, "2": 25 } }.';
           return array();
         }
+        $clean_chapters = array();
         foreach ($chapters as $ch => $count) {
           if (!is_numeric($count)) {
             $errorMsg = 'Verse counts must be numbers.';
             return array();
           }
+          $clean_chapters[wp_strip_all_tags((string)$ch)] = (int)$count;
         }
+        // Book names never contain markup; stripping tags keeps payloads
+        // out of the inline config JSON.
+        $clean[wp_strip_all_tags((string)$book)] = $clean_chapters;
       }
-      return $decoded;
+      return $clean;
     }
 
     public function sanitize_settings($in) {
@@ -197,7 +227,9 @@ if (!class_exists('PrimeBible_Verse_Preview')) {
       $out['load_in_admin'] = $this->yesno($in['load_in_admin'] ?? 0);
 
       $out['apiUrl'] = esc_url_raw($in['apiUrl'] ?? $d['apiUrl']);
-      $out['translation'] = sanitize_text_field($in['translation'] ?? $d['translation']);
+      $translations = $this->available_translations();
+      $translation = strtoupper(sanitize_text_field($in['translation'] ?? $d['translation']));
+      $out['translation'] = array_key_exists($translation, $translations) ? $translation : $d['translation'];
       $out['theme'] = in_array(($in['theme'] ?? ''), array('system','light','dark'), true) ? $in['theme'] : $d['theme'];
       $out['position'] = in_array(($in['position'] ?? ''), array('auto','top','bottom'), true) ? $in['position'] : $d['position'];
 
@@ -257,28 +289,38 @@ if (!class_exists('PrimeBible_Verse_Preview')) {
     }
 
     public function enqueue() {
-      if (is_admin() && !$this->get_settings()['load_in_admin']) {
-        return;
-      }
+      if (is_admin()) {
+        // Front-end scope/post-type checks don't apply in wp-admin
+        if (!$this->get_settings()['load_in_admin']) {
+          return;
+        }
+      } else {
+        $scope = $this->get_settings()['load_scope'];
+        if ($scope === 'singular_only' && !is_singular()) {
+          return;
+        }
 
-      $scope = $this->get_settings()['load_scope'];
-      if ($scope === 'singular_only' && !is_singular()) {
-        return;
-      }
-
-      if (is_singular()) {
-        $post = get_queried_object();
-        if ($post && isset($post->ID)) {
-          $allowed_types = $this->get_settings()['post_types'];
-          if (!in_array($post->post_type, $allowed_types, true)) {
-            return;
-          }
-          $disabled = get_post_meta($post->ID, self::META_DISABLE, true);
-          if (!empty($disabled)) {
-            return;
+        if (is_singular()) {
+          $post = get_queried_object();
+          if ($post && isset($post->ID)) {
+            $allowed_types = $this->get_settings()['post_types'];
+            if (!in_array($post->post_type, $allowed_types, true)) {
+              return;
+            }
+            $disabled = get_post_meta($post->ID, self::META_DISABLE, true);
+            if (!empty($disabled)) {
+              return;
+            }
           }
         }
       }
+
+      // Documented escape hatch: return false to skip loading entirely
+      if (!apply_filters('primebible_should_load', true)) {
+        return;
+      }
+
+      do_action('primebible_before_enqueue');
 
       $debug = defined('SCRIPT_DEBUG') && SCRIPT_DEBUG;
 
@@ -301,14 +343,16 @@ if (!class_exists('PrimeBible_Verse_Preview')) {
 
       $config = $this->build_js_config();
       $config = apply_filters('primebible_config', $config);
-      $inline = 'window.PrimeBibleConfig = ' . wp_json_encode($config, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) . ';';
+      // JSON_HEX_TAG/JSON_HEX_AMP: a stored "</script>" in any config string
+      // must not be able to break out of this inline script tag.
+      $inline = 'window.PrimeBibleConfig = ' . wp_json_encode($config, JSON_HEX_TAG | JSON_HEX_AMP | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) . ';';
       wp_add_inline_script($handle, $inline, 'before');
 
       $opts = $this->get_settings();
       if (!empty($opts['customStyles'])) {
         $css = trim($opts['customStyles']);
         if ($css !== '') {
-          $after = '(function(){try{var s=document.createElement("style");s.id="pbv-custom-styles";s.textContent=' . wp_json_encode($css) . ';document.head.appendChild(s);}catch(e){}})();';
+          $after = '(function(){try{var s=document.createElement("style");s.id="pbv-custom-styles";var n=window.PrimeBibleConfig&&window.PrimeBibleConfig.styleNonce;if(n){s.setAttribute("nonce",String(n));}s.textContent=' . wp_json_encode($css, JSON_HEX_TAG | JSON_HEX_AMP) . ';document.head.appendChild(s);}catch(e){}})();';
           wp_add_inline_script($handle, $after, 'after');
         }
       }
@@ -414,12 +458,47 @@ if (!class_exists('PrimeBible_Verse_Preview')) {
       }
     }
 
+    public function shortcode($atts, $content = '') {
+      $atts = shortcode_atts(
+        array(
+          'ref' => '',
+          'translation' => '',
+          'text' => '',
+        ),
+        $atts,
+        'primebible'
+      );
+
+      $ref = trim(sanitize_text_field($atts['ref']));
+      if ($ref === '') {
+        return '';
+      }
+
+      $label = trim(wp_strip_all_tags((string)$content));
+      if ($label === '') {
+        $label = trim(sanitize_text_field($atts['text']));
+      }
+      if ($label === '') {
+        $label = $ref;
+      }
+
+      $translations = $this->available_translations();
+      $translation = strtoupper(sanitize_text_field($atts['translation']));
+      $translation_attr = '';
+      if ($translation !== '' && array_key_exists($translation, $translations)) {
+        $translation_attr = ' data-translation="' . esc_attr($translation) . '"';
+      }
+
+      return '<span class="pbv-ref" data-pbv-manual="1" data-ref="' . esc_attr($ref) . '"' . $translation_attr . '>' . esc_html($label) . '</span>';
+    }
+
     public function render_settings_page() {
       if (!current_user_can('manage_options')) {
         return;
       }
       $o = $this->get_settings();
       $available_post_types = get_post_types(array('public' => true), 'objects');
+      $available_translations = $this->available_translations();
       ?>
       <div class="wrap pbv-admin-wrap">
         <div class="pbv-header">
@@ -546,9 +625,29 @@ if (!class_exists('PrimeBible_Verse_Preview')) {
                     <div class="pbv-field">
                       <label for="translation" class="pbv-label">
                         Bible Translation
-                        <span class="pbv-label-description">Default translation to use (e.g., KJV, NIV, ESV)</span>
+                        <span class="pbv-label-description">Default translation to use for verse previews</span>
                       </label>
-                      <input type="text" id="translation" name="<?php echo esc_attr(self::OPTION); ?>[translation]" value="<?php echo esc_attr($o['translation']); ?>" class="pbv-input" placeholder="KJV" />
+                      <select id="translation" name="<?php echo esc_attr(self::OPTION); ?>[translation]" class="pbv-select">
+                        <?php foreach ($available_translations as $code => $label): ?>
+                          <option value="<?php echo esc_attr($code); ?>" <?php selected($o['translation'], $code); ?>>
+                            <?php echo esc_html($code . ' - ' . $label); ?>
+                          </option>
+                        <?php endforeach; ?>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div class="pbv-card-row">
+                    <div class="pbv-field">
+                      <label for="pbv_test_reference" class="pbv-label">
+                        Test Reference
+                        <span class="pbv-label-description">Verify the API URL and selected translation before publishing changes</span>
+                      </label>
+                      <div class="pbv-test-row">
+                        <input type="text" id="pbv_test_reference" value="John 3:16" class="pbv-input" />
+                        <button type="button" id="pbv_test_api" class="button button-secondary">Test API</button>
+                      </div>
+                      <div id="pbv_test_result" class="pbv-test-result" role="status" aria-live="polite"></div>
                     </div>
                   </div>
                 </div>
@@ -857,6 +956,87 @@ if (!class_exists('PrimeBible_Verse_Preview')) {
             document.getElementById('section-' + target).classList.add('active');
           });
         });
+
+        function appendSanitizedHtml(target, html) {
+          const allowed = new Set(['STRONG', 'EM', 'B', 'I', 'BR', 'SPAN', 'SUP']);
+          const parser = new DOMParser();
+          const doc = parser.parseFromString(String(html || ''), 'text/html');
+
+          function cleanse(node) {
+            if (node.nodeType === Node.TEXT_NODE) {
+              return document.createTextNode(node.nodeValue || '');
+            }
+            if (node.nodeType !== Node.ELEMENT_NODE) {
+              return document.createTextNode('');
+            }
+            const tag = node.nodeName.toUpperCase();
+            if (!allowed.has(tag)) {
+              const fragment = document.createDocumentFragment();
+              node.childNodes.forEach(child => fragment.appendChild(cleanse(child)));
+              return fragment;
+            }
+            const el = document.createElement(tag.toLowerCase());
+            if (tag === 'SPAN' && node.className === 'verse-num') {
+              el.className = 'verse-num';
+            }
+            node.childNodes.forEach(child => el.appendChild(cleanse(child)));
+            return el;
+          }
+
+          Array.from(doc.body.childNodes).forEach(node => target.appendChild(cleanse(node)));
+        }
+
+        const testButton = document.getElementById('pbv_test_api');
+        const testResult = document.getElementById('pbv_test_result');
+        if (testButton && testResult && window.fetch) {
+          testButton.addEventListener('click', async function() {
+            const apiUrl = document.getElementById('apiUrl');
+            const translation = document.getElementById('translation');
+            const reference = document.getElementById('pbv_test_reference');
+            const ref = reference ? reference.value.trim() : '';
+            testResult.className = 'pbv-test-result is-loading';
+            testResult.textContent = '';
+
+            if (!apiUrl || !apiUrl.value || !ref) {
+              testResult.className = 'pbv-test-result is-error';
+              testResult.textContent = 'Enter an API URL and reference to test.';
+              return;
+            }
+
+            testButton.disabled = true;
+            testButton.textContent = 'Testing...';
+            try {
+              const params = new URLSearchParams({
+                ref: ref,
+                translation: translation ? translation.value : 'KJV',
+                format: 'html'
+              });
+              const response = await fetch(apiUrl.value + '?' + params.toString(), {
+                mode: 'cors',
+                headers: { 'Accept': 'application/json', 'X-Requested-With': 'PrimeBible-Embed' }
+              });
+              if (!response.ok) {
+                throw new Error('HTTP ' + response.status);
+              }
+              const data = await response.json();
+              if (!data || typeof data.text !== 'string') {
+                throw new Error('Unexpected API response.');
+              }
+
+              testResult.className = 'pbv-test-result is-success';
+              const title = document.createElement('strong');
+              title.textContent = 'Success: ';
+              testResult.appendChild(title);
+              appendSanitizedHtml(testResult, data.text);
+            } catch (err) {
+              testResult.className = 'pbv-test-result is-error';
+              testResult.textContent = 'Unable to load this test reference. ' + (err && err.message ? err.message : '');
+            } finally {
+              testButton.disabled = false;
+              testButton.textContent = 'Test API';
+            }
+          });
+        }
       })();
       </script>
       <?php
